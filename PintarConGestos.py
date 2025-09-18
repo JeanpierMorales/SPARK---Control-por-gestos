@@ -80,6 +80,8 @@ canvas = np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
 print("Press 'q' to quit.")
 print("Press 's' to save your artwork.")
 
+cv2.namedWindow("Air Canvas", cv2.WINDOW_NORMAL)
+
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
