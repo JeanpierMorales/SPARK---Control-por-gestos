@@ -1,5 +1,8 @@
 import tkinter as tk
 from tkinter import messagebox
+import subprocess
+import os
+from tkinter import ttk
 
 class UIManager:
     def __init__(self, controller=None):
@@ -7,12 +10,13 @@ class UIManager:
         
         self.root = tk.Tk()
         self.root.title("Proyecto Control X Gestos")
-        self.root.geometry("350x350")
+        self.root.geometry("400x450")
 
         # Variables de estado
         self.estado_captura = tk.StringVar(value="Apagado")
         self.estado_conexion = tk.StringVar(value="Desconectado")
         self.url_ws = tk.StringVar(value="ws://localhost:8000")
+        self.selected_program = tk.StringVar(value="Seleccionar programa")
 
         self._generar_interfaz()
 
@@ -55,6 +59,27 @@ class UIManager:
         self.label_gesto = tk.Label(self.root, text="Esperando gesto...", font=("Arial", 11))
         self.label_gesto.pack(pady=(15, 10))
 
+        # Sección de selección de programas
+        frame_programas = tk.Frame(self.root)
+        frame_programas.pack(pady=(10, 5))
+
+        tk.Label(frame_programas, text="Programas de gestos:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        self.combo_programas = ttk.Combobox(
+            frame_programas,
+            textvariable=self.selected_program,
+            values=["Seleccionar programa", "Hand Control", "Hand Cursor", "Pintar Con Gestos", "Prueba", "Volverse Invisible"],
+            state="readonly",
+            width=20
+        )
+        self.combo_programas.grid(row=0, column=1, padx=5, pady=5)
+
+        self.boton_lanzar = tk.Button(
+            frame_programas,
+            text="Lanzar Programa",
+            command=self._on_lanzar_programa
+        )
+        self.boton_lanzar.grid(row=0, column=2, padx=5, pady=5)
+
     # EVENTOS DE BOTONES
     def _on_toggle_inicio(self):
         """Alterna el estado de captura."""
@@ -84,6 +109,41 @@ class UIManager:
         else:
             self.estado_conexion.set("Desconectado")
             messagebox.showerror("Error de conexión", "No se pudo conectar al WebSocket.")
+
+    def _on_lanzar_programa(self):
+        """Lanzar el programa seleccionado."""
+        programa = self.selected_program.get()
+        if programa == "Seleccionar programa":
+            messagebox.showwarning("Selección requerida", "Por favor, selecciona un programa para lanzar.")
+            return
+
+        # Mapear nombres a rutas de archivos en la carpeta gestures (integrada al MVC)
+        programas_map = {
+            "Hand Control": "gestures/hand_control.py",
+            "Hand Cursor": "gestures/hand_cursor.py",
+            "Pintar Con Gestos": "gestures/PintarConGestos.py",
+            "Prueba": "gestures/prueba.py",
+            "Volverse Invisible": "gestures/VolverseInvisibleConGestos.py"
+        }
+
+        script_path = programas_map.get(programa)
+        if not script_path:
+            messagebox.showerror("Error", "Programa no encontrado.")
+            return
+
+        # Verificar si el archivo existe
+        if not os.path.exists(script_path):
+            messagebox.showerror("Error", f"El archivo {script_path} no existe.")
+            return
+
+        try:
+            # Lanzar el script en un proceso separado sin bloquear
+            subprocess.Popen(["python", script_path])
+            messagebox.showinfo("Programa lanzado", f"{programa} se ha lanzado correctamente.")
+        except FileNotFoundError:
+            messagebox.showerror("Error", "Python no encontrado en el PATH o archivo no existe.")
+        except Exception as e:
+            messagebox.showerror("Error al lanzar", f"No se pudo ejecutar el programa: {e}")
 
     # MÉTODOS PÚBLICOS DE ACTUALIZACIÓN
     def actualizar_datos_pantalla(self, gesture_data: dict):
