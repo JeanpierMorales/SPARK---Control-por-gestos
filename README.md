@@ -1,2 +1,2 @@
 # SPARK---Control-por-gestos
-Desarrollo de un sistema capaz de realizar acciones directas con el ordenador bajo instrucciones de gestos humanos
+Desarrollo de un sistema PARA RECONOCER GESTOS DE LA MANO Y TRADUCIRLOS EN CONTROL SOBRE UNA FIGURA 3D
