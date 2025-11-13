@@ -6,6 +6,8 @@ import time
 from collections import deque
 import os
 
+from FSM import HandStateMachine
+
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
@@ -103,8 +105,60 @@ def format_report(hand_id, handedness, score, pts, orientation_deg, curls, pinch
         out["wrist_velocity_px_per_s"] = float(wrist_vel)
     return out
 
+
+def imprimir_reporte(data_reporte):
+    print("=== FRAME REPORT ===")
+    for key, value in data_reporte.items():
+        if key=="hands":
+            if len(value)>0:
+                for index, mano in enumerate(value):
+                    print(f"MANO {index}:")
+                    for llave, valor in mano.items():
+                        if llave!="landmarks":
+                            print(f"{llave}: {valor}")
+                        else:
+                            print(f"{key}: {value}")
+
+
 def main():
     cap = cv2.VideoCapture(0)
+    fsm = HandStateMachine(transition_delay=2.0)
+
+    report = {}
+
+    # Variables generales de control
+    p_zoom = 0.0
+    p_color = [0.0, 0.0, 0.0]
+    p_rotation = 0.0
+    p_move = [0.0, 0.0]
+
+
+    def dibujar_estado_actual(image):
+        # Draw the current FSM state on the top-left corner
+        cv2.putText(image, f"STATE: {current_state}", (30, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
+
+    def dibujar_variables(image):
+        # Draw your parameter values below
+        color_texto = (0,0,0)
+        cv2.putText(image, f"Zoom: {p_zoom:.2f}", (30, 90),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, color_texto, 2, cv2.LINE_AA)
+        cv2.putText(image, f"Color: {p_color[0]:.2f}, {p_color[1]:.2f}, {p_color[2]:.2f}", (30, 120),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, color_texto, 2, cv2.LINE_AA)
+        cv2.putText(image, f"Rotation: {p_rotation:.2f}", (30, 150),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, color_texto, 2, cv2.LINE_AA)
+        cv2.putText(image, f"Move: {p_move[0]:.2f}, {p_move[1]:.2f}", (30, 180),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, color_texto, 2, cv2.LINE_AA)
+        
+        
+        if current_state == "COLOR":
+            color_display = tuple(int(c * 255) for c in p_color)
+            cv2.rectangle(image, (30, 210), (130, 260), color_display, -1)
+    
+    # Variables para controlar los gestos
+    base_pinch = 0
+    base_pos = 0
+
     with mp_hands.Hands(static_image_mode=False,
                         max_num_hands=MAX_HANDS,
                         min_detection_confidence=0.5,
@@ -114,6 +168,8 @@ def main():
         wrist_vel_buffers = {}
 
         prev_time = time.time()
+        
+        # ===== Bucle principal del programa
         while True:
             ret, frame = cap.read()
             if not ret:
@@ -126,6 +182,7 @@ def main():
 
             report = {"timestamp": time.time(), "hands": []}
 
+            # ==== CALCULO DE DATOS DE LAS MANOS
             if results.multi_hand_landmarks:
                 ih, iw = frame.shape[:2]
                 for i, (landmarks, handedness) in enumerate(zip(results.multi_hand_landmarks,
@@ -181,25 +238,86 @@ def main():
                     inter_hand = float(np.linalg.norm(w0[:2] - w1[:2]))
                     report["inter_hand_distance_px"] = inter_hand
 
-            # print report for this frame (you can instead write to file / stream)
+
+            # ==== Imprimir el reporte
             os.system('cls')
-            print("=== FRAME REPORT ===")
-            for key, value in report.items():
-                
-                if key=="hands":
-                    if len(value)>0:
-                        for index, mano in enumerate(value):
-                            print(f"MANO {index}:")
-                            for llave, valor in mano.items():
-                                if llave!="landmarks":
-                                    print(f"{llave}: {valor}")
-
-                else:
-                    print(f"{key}: {value}")
-                
+            #imprimir_reporte(report)
+            #ahorita no estoy imprimiendo nada
 
 
+            # ==== FSM update and overlay ===
+            current_state = fsm.update(report["hands"])
+            print("Current FSM State:", current_state)
+
+            # Reset the base pinch when entering ZOOM for the first time
+            if current_state != "ZOOM":
+                base_pinch = None
+            if current_state != "MOVER":
+                base_pos = None
+
+            # === Behavior logic depending on FSM state ===
+
+            if current_state == "COLOR":
+                # Find right hand if available
+                right_hand = next((h for h in report["hands"] if h["handedness"] == "Right"), None)
+                if right_hand:
+                    # Get wrist position
+                    wrist = np.array(right_hand["landmarks"][0])[:2]
+                    ih, iw = frame.shape[:2]
+
+                    # Normalize position (0–1 range)
+                    norm_x = wrist[0] / iw
+                    norm_y = wrist[1] / ih
+
+                    # Map to your color tuple (example: RGB with normalized values)
+                    p_color = (norm_x, norm_y, 1 - norm_x)  # for testing — you’ll define your mapping later
+
+            if current_state == "ZOOM":
+                right_hand = next((h for h in report["hands"] if h["handedness"] == "Right"), None)
+                if right_hand:
+                    pinch_dist = right_hand["pinch_distance_px"]
+
+                    # Initialize the base pinch when entering the state
+                    if base_pinch is None:
+                        base_pinch = pinch_dist
+
+                    # Compute difference and update p_zoom proportionally
+                    delta = pinch_dist - base_pinch
+                    p_zoom += delta * 0.1  # adjust sensitivity if needed
+                    base_pinch = pinch_dist  # update for smooth continuous control
+
+            if current_state == "MOVER":
+                left_hand = next((h for h in report["hands"] if h["handedness"] == "Right"), None)
+                if left_hand:
+                    # Extract the current wrist or palm center position (2D)
+                    hand_pos = np.array(left_hand["landmarks"][0][:2])  # wrist coords in pixels
+
+                    # Initialize reference position
+                    if base_pos is None:
+                        base_pos = hand_pos
+
+                    # Compute displacement relative to base position
+                    delta = hand_pos - base_pos
+
+                    # Update the movement variable with scaled displacement
+                    p_move[0] += delta[0] * 0.05  # scale factors tune sensitivity
+                    p_move[1] += delta[1] * 0.05
+
+                    # Update base for next frame (smooth continuous motion)
+                    base_pos = hand_pos
+
+
+            # ===== Dibujar los datos de reporte
+            dibujar_estado_actual(image)
+
+            dibujar_variables(image)
+
+
+            # ===== Mostrar la camara (con todos los dibujos incluidos)
             cv2.imshow('Hand Report', image)
+
+
+            # ===== Indicacion de cerrar en caso se presione Esc
             if cv2.waitKey(1) & 0xFF == 27:
                 break
 
