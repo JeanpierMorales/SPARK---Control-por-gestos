@@ -3,16 +3,16 @@ class GestureListener:
         self.active = True
         self.gesture_history = []  # Historial de gestos para análisis futuro
 
-    def listen(self, gesture):
+    def listen(self, gestures):
         """
         Escucha y registra gestos detectados.
         Puede expandirse para análisis de patrones o integración con IA.
-        
+
         Parámetros:
-        - gesture: El gesto detectado (string)
+        - gestures: Los gestos detectados (dict con 'Left' y 'Right')
         """
         if self.active:
-            self.gesture_history.append(gesture)
+            self.gesture_history.append(gestures)
             # Mantener solo los últimos 100 gestos para no consumir mucha memoria
             if len(self.gesture_history) > 100:
                 self.gesture_history.pop(0)

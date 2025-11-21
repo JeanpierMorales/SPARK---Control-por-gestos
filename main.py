@@ -46,7 +46,13 @@ def main():
         log("Error: No se pudo abrir la cámara", 'error')
         return
 
+    # Configurar la ventana de la cámara para que ocupe toda la pantalla
+    cv2.namedWindow("Camera Feed", cv2.WND_PROP_FULLSCREEN)
+    cv2.setWindowProperty("Camera Feed", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
     log("Captura de video iniciada. Presiona ESC para salir.", 'info')
+
+    frame_count = 0  # Contador de frames procesados
 
     try:
         while True:
@@ -57,31 +63,41 @@ def main():
                 break
 
             # Detectar mano y landmarks
-            frame, landmarks = detector.detect(frame)
+            frame, landmarks, handedness = detector.detect(frame)
 
-            # Reconocer gesto
-            gesture = recognizer.recognize(landmarks)
+            # Reducir resolución del video para mejorar el rendimiento
+            frame = cv2.resize(frame, (640, 480))
 
-            # Escuchar gesto para historial
-            listener.listen(gesture)
+            # Corregir efecto espejo invirtiendo el marco horizontalmente
+            frame = cv2.flip(frame, 1)
 
-            # Ejecutar comando basado en gesto
+            # Procesar cada 2 marcos para optimizar el rendimiento
+            if frame_count % 2 == 0:
+                gestures = recognizer.recognize(landmarks, handedness)
+                for hand, gesture in gestures.items():
+                    listener.listen(gesture)
+
+            # Ejecutar comandos basados en gestos
             try:
-                interpreter.execute(gesture)
+                interpreter.execute(gestures)
             except Exception as e:
-                log(f"Error ejecutando comando para gesto {gesture}: {str(e)}", 'error')
+                log(f"Error ejecutando comandos para gestos {gestures}: {str(e)}", 'error')
 
-            # Loggear gesto detectado (solo si cambió)
-            if gesture != recognizer.last_gesture:
-                log(f"Gesto detectado: {gesture}", 'debug')
+            # Loggear gestos detectados (solo si cambiaron)
+            for hand, gesture in gestures.items():
+                last = recognizer.last_gestures.get(hand, None)
+                if gesture != last:
+                    log(f"Gesto detectado en {hand}: {gesture}", 'debug')
 
-            # Mostrar frame de la cámara
+            # Mostrar el marco procesado
             cv2.imshow("Camera Feed", frame)
 
             # Salir si se presiona ESC
             if cv2.waitKey(1) & 0xFF == 27:
                 log("Saliendo de la aplicación", 'info')
                 break
+
+            frame_count += 1  # Incrementar contador de frames
 
     except Exception as e:
         log(f"Error durante la ejecución: {str(e)}", 'error')
